@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pandas
+numpy
+jinja2
+redis
+fastapi-lifespan-manager
+pytest-asyncio
+pytest-mock

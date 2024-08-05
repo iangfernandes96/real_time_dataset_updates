@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Real-Time Dataset Updates</title>
+    <div>
+        <strong>User ID: </strong><span id="user-id"></span>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+
+        .container {
+            display: flex;
+        }
+
+        .table-container {
+            flex: 3;
+        }
+
+        .messages-container {
+            flex: 1;
+            margin-left: 20px;
+        }
+
+        table,
+        th,
+        td {
+            border: 1px solid black;
+            border-collapse: collapse;
+            padding: 5px;
+            text-align: center;
+        }
+
+        #messages {
+            border: 1px solid black;
+            padding: 10px;
+            height: 300px;
+            overflow-y: scroll;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Real-Time Dataset Updates</h1>
+    <!--<button onclick="requestUpdate('col_0')">Update Column 0</button>-->
+    <input type="text" id="column-input" placeholder="Enter column to update">
+    <button onclick="updateDataset()">Update Dataset</button>
+    <button onclick="fetchDataset()">Fetch Dataset</button>
+    <div class="container">
+        <div class="table-container">
+            <table id="dataset-table">
+                <!-- Table will be filled by JavaScript -->
+            </table>
+        </div>
+        <div id="pagination">
+            <button onclick="previousPage()">Previous</button>
+            <span id="page-number">1</span>
+            <button onclick="nextPage()">Next</button>
+        </div>
+        <div class="messages-container">
+            <div id="messages"></div>
+        </div>
+    </div>
+
+    <script>
+        let websocket;
+        let user_id;
+        let currentPage = 1;
+        const pageSize = 20;
+
+        function fetchDataset() {
+            $.get(`/data/get_dataset?page=${currentPage}&page_size=${pageSize}`, function (data) {
+                let table = $("#dataset-table");
+                table.empty();
+                let header = "<tr>";
+                for (let key in data[0]) {
+                    header += "<th>" + key + "</th>";
+                }
+                header += "</tr>";
+                table.append(header);
+
+                data.forEach(row => {
+                    let rowHtml = "<tr>";
+                    for (let key in row) {
+                        rowHtml += "<td>" + row[key] + "</td>";
+                    }
+                    rowHtml += "</tr>";
+                    table.append(rowHtml);
+                });
+                $("#page-number").text(currentPage);
+            });
+        }
+
+        function updateDataset() {
+            const column = $("#column-input").val();
+            if (column) {
+                requestUpdate(column);
+            }
+        }
+
+        function requestUpdate(column) {
+            $.ajax({
+                url: "/data/update_column",
+                type: "POST",
+                contentType: "application/json",
+                data: JSON.stringify({ column: column, user_id: user_id }),
+                success: function (response) {
+                    let messagesDiv = $("#messages");
+                    console.log(response.status);
+                    messagesDiv.append("<p>" + response.status + "</p>");
+                }
+            });
+        }
+
+
+        function initializeWebSocket(user_id) {
+
+            websocket = new WebSocket("ws://127.0.0.1:8000/ws/user/" + user_id);
+
+            websocket.onmessage = function (event) {
+                let messagesDiv = $("#messages");
+                let message = JSON.parse(event.data);
+                messagesDiv.append("<p>" + message.message + "</p>");
+
+                if (message.message.includes("updated by user")) {
+                    console.log("Dataset updated by user");
+                    /*
+                        Commented out below fetchDataset() call to 
+                        prevent fetching dataset on every update. If
+                        real-time updates are required, uncomment the
+                        line below.
+                    */
+                    // fetchDataset();
+                }
+            };
+
+            websocket.onclose = function () {
+                console.log("WebSocket connection closed");
+            };
+
+            websocket.onopen = function () {
+                console.log("WebSocket connection opened");
+            };
+
+            websocket.onerror = function (error) {
+                console.log("WebSocket error: " + error);
+            };
+        };
+
+        function previousPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                fetchDataset(currentPage);
+            }
+        }
+
+        function nextPage() {
+            currentPage++;
+            fetchDataset(currentPage);
+        }
+
+        $(document).ready(function () {
+            fetchDataset(currentPage);
+
+            $.get("/ws/get_user_id", function (data) {
+                user_id = data.user_id;
+                console.log("User ID: " + user_id);
+                $("#user-id").text(user_id);
+                initializeWebSocket(user_id);
+            });
+
+            /*
+                To refresh the dataset every 3 seconds, rather
+                than show every intermediate update. 
+            */
+            setInterval(fetchDataset, 3000);
+        });
+    </script>
+</body>
+
+</html>
